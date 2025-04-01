@@ -2,6 +2,9 @@
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg?style=for-the-badge)](https://www.paypal.com/ncp/payment/46MNGVWGKCXAQ)
 
+## About
+A project forked from jlesage/docker-jdownloader-2 with a slightly different approach. I prefer Dockerfiles being built in a single project and being able to build them myself locally from base images such as alpine, debian, node, etc. Therefore I took the Dockerfiles and modified them to be able to build them myself. If anyone needs a self-hosted jdownloader 2 such as myself, I hope you take joy in my approach.
+
 ## Requirements
 - Docker
 
