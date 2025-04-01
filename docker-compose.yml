@@ -1,0 +1,10 @@
+---
+
+services:
+  jdownloader-2:
+    image: jdownloader-2-web-ui
+    ports:
+      - "127.0.0.1:5800:5800"
+    volumes:
+      - "./config:/config:rw"
+      - "./downloads:/output:rw"

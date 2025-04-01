@@ -1,0 +1,148 @@
+# syntax=docker/dockerfile:1.4
+#
+# baseimage Dockerfile - Alpine Version (Native Build)
+# Based on https://github.com/jlesage/docker-baseimage
+# Simplified for native architecture builds.
+#
+
+# Define Alpine-specific packages needed in the final image.\
+# For timezone support
+# For 'groupmod' command
+ARG ALPINE_PKGS="tzdata shadow"
+
+# Get UPX (statically linked).
+FROM alpine:3.20 AS upx
+ARG UPX_VERSION=4.2.4
+RUN apk --no-cache add curl && \
+    mkdir /tmp/upx && \
+    curl -# -L https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz | tar xJ --strip 1 -C /tmp/upx && \
+    cp -v /tmp/upx/upx /usr/bin/upx
+
+# Build the init system and process supervisor (Native Build)
+FROM alpine:3.20 AS cinit
+# Install native build dependencies
+RUN apk --no-cache add make clang lld gcc musl-dev
+COPY src/cinit /tmp/cinit
+# Build natively, link statically
+RUN CC=clang \
+    LDFLAGS="-static -fuse-ld=lld -Wl,--strip-all" \
+    make -C /tmp/cinit
+COPY --from=upx /usr/bin/upx /usr/bin/upx
+RUN upx /tmp/cinit/cinit
+
+# Build the log monitor (Native Build)
+FROM alpine:3.20 AS logmonitor
+# Install native build dependencies
+RUN apk --no-cache add make clang lld gcc musl-dev linux-headers
+COPY src/logmonitor /tmp/logmonitor
+# Build natively, link statically
+RUN CC=clang \
+    LDFLAGS="-static -fuse-ld=lld -Wl,--strip-all" \
+    make -C /tmp/logmonitor
+COPY --from=upx /usr/bin/upx /usr/bin/upx
+RUN upx /tmp/logmonitor/logmonitor
+
+# Build su-exec (Native Build)
+FROM alpine:3.20 AS su-exec
+# Install native build dependencies
+RUN apk --no-cache add curl make clang lld gcc musl-dev
+RUN mkdir /tmp/su-exec
+RUN curl -# -L https://github.com/ncopa/su-exec/archive/v0.2.tar.gz | tar xz --strip 1 -C /tmp/su-exec
+# Build natively, link statically
+RUN CC=clang \
+    CFLAGS="-Os -fomit-frame-pointer" \
+    LDFLAGS="-static -fuse-ld=lld -Wl,--strip-all" \
+    make -C /tmp/su-exec
+COPY --from=upx /usr/bin/upx /usr/bin/upx
+RUN upx /tmp/su-exec/su-exec
+
+# Build logrotate (Native Build)
+FROM alpine:3.20 AS logrotate
+# build.sh likely installs dependencies, check src/logrotate/build.sh
+COPY src/logrotate /tmp/build
+RUN /tmp/build/build.sh # Assuming this script uses native tools now
+# Verify static linking (optional)
+# RUN ldd /tmp/logrotate-install/usr/sbin/logrotate | grep -q 'statically linked' || (echo "logrotate not statically linked" && exit 1)
+COPY --from=upx /usr/bin/upx /usr/bin/upx
+RUN upx /tmp/logrotate-install/usr/sbin/logrotate
+
+# Build uuidgen (Native Build)
+FROM alpine:3.20 AS uuidgen
+# build.sh likely installs dependencies, check src/uuidgen/build.sh
+COPY src/uuidgen /tmp/build
+RUN /tmp/build/build.sh # Assuming this script uses native tools now
+# Verify static linking (optional)
+# RUN ldd /tmp/util-linux-install/usr/bin/uuidgen | grep -q 'statically linked' || (echo "uuidgen not statically linked" && exit 1)
+COPY --from=upx /usr/bin/upx /usr/bin/upx
+RUN upx /tmp/util-linux-install/usr/bin/uuidgen
+
+# --- Final Alpine Image ---
+FROM alpine:3.20
+
+ARG ALPINE_PKGS="tzdata shadow"
+
+WORKDIR /tmp
+
+# Install the built tools
+COPY --link --from=cinit /tmp/cinit/cinit /opt/base/sbin/
+COPY --link --from=logmonitor /tmp/logmonitor/logmonitor /opt/base/bin/
+COPY --link --from=su-exec /tmp/su-exec/su-exec /opt/base/sbin/su-exec
+COPY --link --from=logrotate /tmp/logrotate-install/usr/sbin/logrotate /opt/base/sbin/
+COPY --link --from=uuidgen /tmp/util-linux-install/usr/bin/uuidgen /opt/base/bin/
+
+# Copy helpers
+COPY helpers/* /opt/base/bin/
+
+# Install runtime system packages (Alpine specific)
+# Ensure add-pkg script exists in helpers/ or rootfs/
+RUN /opt/base/bin/add-pkg ${ALPINE_PKGS}
+
+# Load our RC file when logging in to the container.
+RUN \
+    if [ -f /root/.profile ]; then \
+        echo "# Include Docker container definitions." >> /root/.profile && \
+        echo ". /root/.docker_rc" >> /root/.profile; \
+    fi
+
+# Make sure all required directory exists.
+RUN \
+    mkdir -p \
+        /defaults \
+        /opt/base/etc/logrotate.d \
+        /etc/services.d \
+        /etc/cont-env.d \
+        /etc/cont-init.d \
+        /etc/cont-finish.d \
+        /etc/cont-logrotate.d \
+    && true
+
+# Keep a copy of default packages repository (Alpine specific path).
+RUN cp /etc/apk/repositories /defaults/
+
+# Add base filesystem structure
+COPY rootfs/ /
+
+# Set environment variables.
+ENV \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/base/sbin:/opt/base/bin \
+    ENV=/root/.docker_rc \
+    USER_ID=1000 \
+    GROUP_ID=1000 \
+    SUP_GROUP_IDS= \
+    UMASK=0022 \
+    LANG=en_US.UTF-8 \
+    TZ=Etc/UTC \
+    KEEP_APP_RUNNING=0 \
+    APP_NICENESS=0 \
+    INSTALL_PACKAGES= \
+    PACKAGES_MIRROR= \
+    CONTAINER_DEBUG=0
+
+VOLUME ["/config"]
+CMD ["/init"]
+
+LABEL \
+      org.label-schema.name="baseimage-alpine-native" \
+      org.label-schema.description="A minimal docker baseimage (Alpine, native build) for application containers" \
+      org.label-schema.vcs-url="https://github.com/jlesage/docker-baseimage" \
+      org.label-schema.schema-version="1.0"

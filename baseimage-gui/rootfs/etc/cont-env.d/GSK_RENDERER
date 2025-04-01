@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# For GTK4 applications, this forces to use the cairo fallback renderer. Without
+# this, GTK tries to use the GL renderer, which fails and produces non fatal
+# errors. The GL render uses the X GLX extension, which is not supported by the
+# X # server of the baseimage.
+#
+
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error.
+
+echo "cairo"
+
+# vim:ft=sh:ts=4:sw=4:et:sts=4
