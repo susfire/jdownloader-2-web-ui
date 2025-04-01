@@ -1,5 +1,7 @@
 # Docker container for JDownloader 2 with Web User Interface
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg?style=for-the-badge)](https://www.paypal.com/ncp/payment/46MNGVWGKCXAQ)
+
 ## Requirements
 - Docker
 
@@ -14,3 +16,6 @@ or convenient script:
 
 ## Start Container
 - docker compose up -d
+
+## Want to buy me a coffee?
+- https://www.paypal.com/ncp/payment/46MNGVWGKCXAQ
